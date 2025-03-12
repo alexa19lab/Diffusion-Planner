@@ -50,7 +50,8 @@ class ObservationNormalizer:
             if k not in data:  # Check if key `k` exists in `data`
                 continue
             mask = torch.sum(torch.ne(data[k], 0), dim=-1) == 0
-            data[k] = (data[k] - v["mean"].to(data[k].device)) / v["std"].to(data[k].device)
+            num = data[k].shape[-1]
+            data[k] = (data[k] - v["mean"][:num].to(data[k].device)) / v["std"][:num].to(data[k].device)
             data[k][mask] = 0
         return data
 

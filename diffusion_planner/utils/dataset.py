@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from torch.utils.data import Dataset
 
 from diffusion_planner.utils.train_utils import openjson, opendata
@@ -13,10 +14,18 @@ class DiffusionPlannerData(Dataset):
 
     def __len__(self):
         return len(self.data_list)
+    
+    def _random_another(self, idx):
+        return np.random.choice(np.arange(len(self)))
 
     def __getitem__(self, idx):
+        try:
 
-        data = opendata(os.path.join(self.data_dir, self.data_list[idx]))
+            data = opendata(os.path.join(self.data_dir, self.data_list[idx]))
+        except Exception as e:
+            print(f"fail to open {self.data_list[idx]}, error is {e}")
+            idx = self._random_another(idx)
+            return self.__getitem__(idx)
 
         ego_agent_past = data['ego_agent_past']
         ego_current_state = data['ego_current_state']
