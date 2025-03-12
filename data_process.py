@@ -2,6 +2,7 @@ import os
 import argparse
 import json
 
+from datetime import datetime
 from diffusion_planner.data_process.data_processor import DataProcessor
 
 from nuplan.planning.utils.multithreading.worker_parallel import SingleMachineParallelExecutor
@@ -30,7 +31,7 @@ def get_filter_parameters(num_scenarios_per_type=None, limit_total_scenarios=Non
     ego_stop_speed_threshold = None      # Limit to scenarios where the ego reaches a certain speed from above
     speed_noise_tolerance = None         # Value at or below which a speed change between two timepoints should be ignored as noise.
 
-    return scenario_types, scenario_tokens, log_names, map_names, num_scenarios_per_type, limit_total_scenarios, timestamp_threshold_s, ego_displacement_minimum_m, \
+    return scenario_types, scenario_tokens, log_names, map_names, num_scenarios_per_type, int(limit_total_scenarios), timestamp_threshold_s, ego_displacement_minimum_m, \
            expand_scenarios, remove_invalid_goals, shuffle, ego_start_speed_threshold, ego_stop_speed_threshold, speed_noise_tolerance
 
 if __name__ == "__main__":
@@ -51,6 +52,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--route_len', type=int, help='number of route lane point', default=20)
     parser.add_argument('--route_num', type=int, help='number of route lanes', default=25)
+    parser.add_argument('--cur_task', type=int, help='number of route lanes', default=0)
     args = parser.parse_args()
 
     # create save folder
@@ -65,16 +67,31 @@ if __name__ == "__main__":
 
     map_version = "nuplan-maps-v1.0"    
     builder = NuPlanScenarioBuilder(args.data_path, args.map_path, sensor_root, db_files, map_version)
+    print("finish NuPlanScenarioBuilder")
     scenario_filter = ScenarioFilter(*get_filter_parameters(args.scenarios_per_type, args.total_scenarios, args.shuffle_scenarios, log_names=log_names))
-
+    print("finish ScenarioFilter")
     worker = SingleMachineParallelExecutor(use_process_pool=True)
     scenarios = builder.get_scenarios(scenario_filter, worker)
     print(f"Total number of scenarios: {len(scenarios)}")
+    task_num = 4
+    interval = len(scenarios) // task_num
+    cur_task = args.cur_task
+    if cur_task < task_num - 1:
+        scenarios = scenarios[cur_task * interval : (cur_task + 1) * interval]
+    else:
+        scenarios = scenarios[cur_task * interval:]
+    print(f"Total number of scenarios of cur task: {len(scenarios)}")
 
     # process data
     del worker, builder, scenario_filter
     processor = DataProcessor(args)
-    processor.work(scenarios)
+
+    # Get current time
+    current_time = datetime.now()
+
+    # Print current time
+    print("Current time:", current_time)
+    processor.work_multi_processor(scenarios, 128)
 
     npz_files = [f for f in os.listdir(args.save_path) if f.endswith('.npz')]
 
