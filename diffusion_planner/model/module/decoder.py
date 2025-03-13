@@ -97,14 +97,25 @@ class Decoder(nn.Module):
                     ).reshape(B, P, -1, 4)
                 }
         else:
+            model_num = 50
+            B_multi_model = B * model_num
+            repeated_cur_trajectories = current_states.unsqueeze(1).repeat(1, model_num, 1, 1).view(B_multi_model, P, -1)
+
             # [B, 1 + predicted_neighbor_num, (1 + V_future) * 4]
-            xT = torch.cat([current_states[:, :, None], torch.randn(B, P, self._future_len, 4).to(current_states.device) * 0.5], dim=2).reshape(B, P, -1)
+            xT = torch.cat([repeated_cur_trajectories.unsqueeze(2), torch.randn(B_multi_model, P, self._future_len, 4).to(current_states.device) * 0.5], dim=2).view(B_multi_model, P, -1)
+
+            # [B, num_agents, (_future_len) * 4]
+            agent_num = ego_neighbor_encoding.shape[1]
+            ego_neighbor_encoding = ego_neighbor_encoding.unsqueeze(1).repeat(1, model_num, 1, 1).view(B_multi_model, agent_num, -1)
+            B, PL, V, C = route_lanes.shape
+            route_lanes = route_lanes.unsqueeze(1).repeat(1, model_num, 1, 1, 1).view(B_multi_model, PL, V, C)
+            neighbor_current_mask = neighbor_current_mask.unsqueeze(1).repeat(1, model_num, 1).view(B_multi_model, -1)
 
             def initial_state_constraint(xt, t, step):
-                xt = xt.reshape(B, P, -1, 4)
+                xt = xt.reshape(B_multi_model, P, -1, 4)
                 xt[:, :, 0, :] = current_states
-                return xt.reshape(B, P, -1)
-            
+                return xt.reshape(B_multi_model, P, -1)
+        
             x0 = dpm_sampler(
                         self.dit,
                         xT,
@@ -117,7 +128,9 @@ class Decoder(nn.Module):
                             "correcting_xt_fn":initial_state_constraint,
                         }
                 )
-            x0 = self._state_normalizer.inverse(x0.reshape(B, P, -1, 4))[:, :, 1:]
+            # x0 = x0.reshape(B, model_num, P, -1, 4).transpose(1, 2)
+            x0 = self._state_normalizer.inverse(x0.reshape(B_multi_model, P, -1, 4))[:, :, 1:]
+            x0 = x0.reshape(B, model_num, P, -1, 4)
 
             return {
                     "prediction": x0

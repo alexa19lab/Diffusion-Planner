@@ -48,7 +48,7 @@ class DiffusionPlanner(AbstractPlanner):
             enable_ema: bool = True,
             device: str = "cpu",
             render: bool = True,
-            save_dir: str = "/mnt/csi-data-aly/user/ruiwan/nuplan_repo/Diffusion-Planner/vis",
+            save_dir: str = "/mnt/csi-data-aly/shared/public/ruiwan/nuplan_vis_20pth_no_interpolation/",
             scenario: AbstractScenario = None,
             eval_dt: float = 0.1,
             eval_num_frames: int = 80,
@@ -154,8 +154,7 @@ class DiffusionPlanner(AbstractPlanner):
         return model_inputs
 
     def outputs_to_trajectory(self, outputs: Dict[str, torch.Tensor], ego_state_history: Deque[EgoState]) -> List[InterpolatableState]:    
-
-        predictions = outputs['prediction'][0, 0].detach().cpu().numpy().astype(np.float64) # T, 4
+        predictions = outputs['prediction'][0, 0, 0].detach().cpu().numpy().astype(np.float64) # T, 4
         heading = np.arctan2(predictions[:, 3], predictions[:, 2])[..., None]
         predictions = np.concatenate([predictions[..., :2], heading], axis=-1) 
 
@@ -164,8 +163,8 @@ class DiffusionPlanner(AbstractPlanner):
         return states
     
     def _global_to_local(self, global_trajectory: np.ndarray, ego_state: EgoState):
-        if isinstance(global_trajectory, InterpolatedTrajectory):
-            states: List[EgoState] = global_trajectory.get_sampled_trajectory()
+            if isinstance(global_trajectory, InterpolatedTrajectory):
+                states: List[EgoState] = global_trajectory.get_sampled_trajectory()
             global_trajectory = np.stack(
                 [
                     np.array(
@@ -203,6 +202,10 @@ class DiffusionPlanner(AbstractPlanner):
         self._scenario_manager.update_ego_state(ego_state)
         self._scenario_manager.update_drivable_area_map()
 
+        predictions = outputs["prediction"][0, 0, 1:].detach().cpu().numpy().astype(np.float64)
+        candidate_trajectories = outputs["prediction"][0, 1:, 0].detach().cpu().numpy().astype(np.float64)
+        vis_trajectory = outputs["prediction"][0, 0, 0].detach().cpu().numpy().astype(np.float64)
+
         if self._render:
             print("yes we are rendering")
             self._imgs.append(
@@ -212,12 +215,10 @@ class DiffusionPlanner(AbstractPlanner):
                     route_roadblock_ids=self._scenario_manager.get_route_roadblock_ids(),
                     scenario=self._scenario,
                     iteration=current_input.iteration.index,
-                    planning_trajectory=self._global_to_local(trajectory, ego_state),
-                    # candidate_trajectories=self._global_to_local(
-                    #     candidate_trajectories[rule_based_scores > 0], ego_state
-                    # ),
+                    planning_trajectory=vis_trajectory,
+                    candidate_trajectories=candidate_trajectories,
                     # candidate_index=best_candidate_idx,
-                    # predictions=predictions,
+                    predictions=predictions,
                     return_img=True,
                 )
             )
